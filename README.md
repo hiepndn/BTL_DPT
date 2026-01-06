@@ -1,0 +1,1 @@
+"Em sử dụng một thuật toán lọc dựa trên ngưỡng sinh học (Biological Thresholds). Em tính tần số cơ bản ($F_0$) bằng Autocorrelation. Nếu $F_0$ nằm ngoài dải tần tiếng nói con người (khoảng 60Hz - 450Hz) hoặc tín hiệu quá nhiễu (dựa trên Zero Crossing Rate cao), hệ thống sẽ từ chối phân tích để đảm bảo độ chính xác."

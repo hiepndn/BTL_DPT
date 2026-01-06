@@ -1,1 +1,16 @@
-"Em sử dụng một thuật toán lọc dựa trên ngưỡng sinh học (Biological Thresholds). Em tính tần số cơ bản ($F_0$) bằng Autocorrelation. Nếu $F_0$ nằm ngoài dải tần tiếng nói con người (khoảng 60Hz - 450Hz) hoặc tín hiệu quá nhiễu (dựa trên Zero Crossing Rate cao), hệ thống sẽ từ chối phân tích để đảm bảo độ chính xác."
+- run code: streamlit run index.py
+- các file đang dùng:
+    - giao diện: index.py
+    - logic: utils.py
+    - xử lý âm thanh kp wav: media_utils.py
+    - trích chọn đặc trưng: extract_features.py
+    - trung bình đặc trưng: avg_features.py
+
+- hiện tại đang có 6 đặc trưng là: RMS, Pitch, Var, Jitter, Shimmer, TEO
+- và 6 cảm xúc: ANG, DIS, FEA, HAP, NEU, SAD
+
+- file trung bình đặc trưng là file emotion_model.json dùng để làm thông số so sánh vs âm thanh truyền vào
+
+- thiếu thư viện thì tải thêm nhé, thường thiếu 2 cái là:
+    - pip install moviepy   
+    - pip install streamlit

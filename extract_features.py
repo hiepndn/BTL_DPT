@@ -1,189 +1,145 @@
-# import os
-# import csv
-# import utils 
-# from utils import get_frames, calculate_energy, calculate_rms, get_pitch_details, calculate_zcr, calculate_jitter, calculate_shimmer
-
-# # Cấu hình đường dẫn (Giữ nguyên như file gốc của bạn)
-# DATASET_PATH = "./data_tets/Crema"
-# OUTPUT_FILE = "features_dataset.csv"
-
-# EMOTION_MAP = {
-#     "ANG": "ANG (Angry)",
-#     "DIS": "DIS (Disgust)",
-#     "FEA": "FEA (Fear)",
-#     "HAP": "HAP (Happy)",
-#     "NEU": "NEU (Neutral)",
-#     "SAD": "SAD (Sadness)"
-# }
-
-# def extract_features_from_folder(folder_path, output_csv):
-#     with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
-#         writer = csv.writer(file)
-#         # Thêm cột Jitter và Shimmer vào tiêu đề
-#         header = ["Filename", "RMS_Energy", "Avg_Pitch", "Pitch_Variance", "Avg_ZCR", "Jitter", "Shimmer", "Label"]
-#         writer.writerow(header)
-        
-#         print(f"Đang bắt đầu xử lý các file trong {folder_path}...")
-        
-#         if not os.path.exists(folder_path):
-#             print(f"Lỗi: Không tìm thấy thư mục {folder_path}")
-#             return
-
-#         files = [f for f in os.listdir(folder_path) if f.endswith('.wav')]
-#         total_files = len(files)
-        
-#         for i, filename in enumerate(files):
-#             file_path = os.path.join(folder_path, filename)
-#             samples, sr = utils.read_wav(file_path)
-            
-#             if samples is None: continue
-
-#             # 1. TRÍCH CHỌN
-#             frames = get_frames(samples, sr)
-#             energies, rms_list, pitches, lags, zcrs = [], [], [], [], []
-            
-#             for frame in frames:
-#                 e = calculate_energy(frame)
-#                 energies.append(e)
-#                 rms_list.append(calculate_rms(frame))
-                
-#                 if e > 800000:
-#                     # Dùng hàm mới get_pitch_details để lấy cả Lag
-#                     p, lag = get_pitch_details(frame, sr)
-#                     if p > 0:
-#                         pitches.append(p)
-#                         lags.append(lag)
-#                     zcrs.append(calculate_zcr(frame))
-            
-#             if not energies: continue
-
-#             # 2. TỔNG HỢP
-#             avg_rms = sum(rms_list) / len(rms_list)
-#             avg_zcr = sum(zcrs) / len(zcrs) if zcrs else 0
-            
-#             valid_pitches = [p for p in pitches if p > 60]
-#             avg_pitch = sum(valid_pitches) / len(valid_pitches) if valid_pitches else 0
-            
-#             pitch_var = 0
-#             if len(valid_pitches) > 1:
-#                 pitch_var = max(valid_pitches) - min(valid_pitches)
-                
-#             # Tính Jitter và Shimmer
-#             jitter = calculate_jitter(lags)
-#             shimmer = calculate_shimmer(rms_list)
-
-#             # 3. NHÃN
-#             try:
-#                 parts = filename.split('_')
-#                 emotion_code = parts[2]
-#                 label = EMOTION_MAP.get(emotion_code, "UNKNOWN")
-#             except:
-#                 label = "UNKNOWN"
-
-#             # 4. GHI CSV
-#             writer.writerow([
-#                 filename, 
-#                 int(avg_rms), 
-#                 int(avg_pitch), 
-#                 int(pitch_var), 
-#                 round(avg_zcr, 4), 
-#                 round(jitter, 2),  # Cột mới
-#                 round(shimmer, 2), # Cột mới
-#                 label
-#             ])
-            
-#             if i % 100 == 0:
-#                 print(f"Đã xử lý {i}/{total_files} file...")
-
-#     print(f"✅ Hoàn tất! Dữ liệu đã lưu tại: {output_csv}")
-
-# if __name__ == "__main__":
-#     extract_features_from_folder(DATASET_PATH, OUTPUT_FILE)
-
 import os
 import csv
+import glob
+import time
+import concurrent.futures
 import utils 
-# Nhớ import thêm calculate_teo
-from utils import get_frames, calculate_energy, calculate_rms, get_pitch_details, calculate_zcr, calculate_jitter, calculate_shimmer, calculate_teo
+from utils import (
+    read_wav, get_frames, calculate_energy, calculate_rms, 
+    get_pitch_details, calculate_zcr, calculate_jitter, 
+    calculate_shimmer, calculate_teo
+)
 
-# Cấu hình đường dẫn
-DATASET_PATH = "./data_tets/Crema"
+# --- CẤU HÌNH ---
+DATASET_PATH = "./data_tets/Crema" # Sửa lại đường dẫn của bạn nếu cần
 OUTPUT_FILE = "features_dataset.csv"
+MAX_WORKERS = os.cpu_count() 
+
+# Ngưỡng năng lượng để lọc khoảng lặng (Phải để thấp thôi, khoảng 800 là đẹp)
+ENERGY_THRESHOLD = 800 
 
 EMOTION_MAP = {
     "ANG": "ANG (Angry)", "DIS": "DIS (Disgust)", "FEA": "FEA (Fear)",
     "HAP": "HAP (Happy)", "NEU": "NEU (Neutral)", "SAD": "SAD (Sadness)"
 }
 
-def extract_features_from_folder(folder_path, output_csv):
-    with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        # THÊM CỘT "TEO" VÀO HEADER
-        header = ["Filename", "RMS", "Pitch", "Var", "ZCR", "Jitter", "Shimmer", "TEO", "Label"]
-        writer.writerow(header)
+def process_single_file(file_path):
+    try:
+        filename = os.path.basename(file_path)
         
-        print(f"Đang xử lý dữ liệu tại {folder_path}...")
-        files = [f for f in os.listdir(folder_path) if f.endswith('.wav')]
+        # 1. Đọc tín hiệu
+        samples, sr = read_wav(file_path)
+        if not samples: return None
         
-        for i, filename in enumerate(files):
-            file_path = os.path.join(folder_path, filename)
-            samples, sr = utils.read_wav(file_path)
-            if samples is None: continue
+        frames = get_frames(samples, sr)
+        if not frames: return None
 
-            # 1. TRÍCH XUẤT
-            frames = get_frames(samples, sr)
-            energies, rms_list, pitches, lags, zcrs, teo_list = [], [], [], [], [], []
-            
-            for frame in frames:
-                e = calculate_energy(frame)
-                energies.append(e)
-                rms_list.append(calculate_rms(frame))
-                teo_list.append(calculate_teo(frame)) # <--- TÍNH TEO
-                
-                if e > 800000:
-                    p, lag = get_pitch_details(frame, sr)
-                    if p > 0:
-                        pitches.append(p)
-                        lags.append(lag)
-                    zcrs.append(calculate_zcr(frame))
-            
-            if not energies: continue
+        # Danh sách chứa kết quả từng frame
+        rms_list = []
+        pitches = []
+        lags = []
+        zcrs = []
+        teo_list = []
 
-            # 2. TỔNG HỢP
-            avg_rms = sum(rms_list) / len(rms_list)
-            avg_teo = sum(teo_list) / len(teo_list) # <--- TEO TRUNG BÌNH
-            avg_zcr = sum(zcrs) / len(zcrs) if zcrs else 0
+        # 2. VÒNG LẶP XỬ LÝ TỪNG FRAME (Khớp với utils.py mới)
+        for frame in frames:
+            # Tính các chỉ số cơ bản
+            e = calculate_energy(frame)
+            rms = calculate_rms(frame)
+            teo = calculate_teo(frame)
             
-            valid_pitches = [p for p in pitches if p > 60]
-            avg_pitch = sum(valid_pitches) / len(valid_pitches) if valid_pitches else 0
+            rms_list.append(rms)
+            teo_list.append(teo)
             
-            pitch_var = 0
-            if len(valid_pitches) > 1:
-                pitch_var = max(valid_pitches) - min(valid_pitches)
-                
-            jitter = calculate_jitter(lags)
-            shimmer = calculate_shimmer(rms_list)
+            # Chỉ tính Pitch và ZCR nếu có tiếng nói (Năng lượng > 800)
+            if e > ENERGY_THRESHOLD:
+                p, lag = get_pitch_details(frame, sr)
+                if p > 50: # Lọc nhiễu tần số thấp
+                    pitches.append(p)
+                    lags.append(lag)
+                zcrs.append(calculate_zcr(frame))
 
-            # 3. NHÃN
-            try:
-                parts = filename.split('_')
+        if not rms_list: return None
+
+        # 3. TỔNG HỢP (Tính trung bình cộng)
+        avg_rms = sum(rms_list) / len(rms_list)
+        avg_teo = sum(teo_list) / len(teo_list)
+        
+        avg_zcr = sum(zcrs) / len(zcrs) if zcrs else 0
+        avg_pitch = sum(pitches) / len(pitches) if pitches else 0
+        
+        # Độ biến thiên Pitch (Var)
+        pitch_var = 0
+        if len(pitches) > 1:
+            pitch_var = max(pitches) - min(pitches)
+            
+        # Jitter & Shimmer
+        jitter = calculate_jitter(pitches if pitches else [0])
+        shimmer = calculate_shimmer(rms_list)
+
+        # 4. GẮN NHÃN TỰ ĐỘNG
+        # Tên file mẫu: 1001_DFA_ANG_XX.wav
+        label = "UNKNOWN"
+        try:
+            name_clean = os.path.splitext(filename)[0] 
+            parts = name_clean.split('_') 
+            if len(parts) >= 3:
                 emotion_code = parts[2]
                 label = EMOTION_MAP.get(emotion_code, "UNKNOWN")
-            except:
-                label = "UNKNOWN"
+        except:
+            label = "UNKNOWN"
 
-            # 4. GHI CSV (Thêm avg_teo vào)
-            writer.writerow([
-                filename, 
-                int(avg_rms), int(avg_pitch), int(pitch_var), round(avg_zcr, 4), 
-                round(jitter, 2), round(shimmer, 2), 
-                int(avg_teo), # <--- GHI TEO
-                label
-            ])
+        # Trả về dòng dữ liệu để ghi CSV
+        return [
+            filename, 
+            int(avg_rms), int(avg_pitch), int(pitch_var), round(avg_zcr, 4), 
+            round(jitter, 2), round(shimmer, 2), int(avg_teo), 
+            label
+        ]
+        
+    except Exception as e:
+        # Nếu lỗi file nào thì in ra để biết
+        # print(f"Lỗi file {file_path}: {e}")
+        return None
+
+def extract_features_turbo(folder_path, output_csv):
+    # Tìm tất cả file .wav
+    files = glob.glob(os.path.join(folder_path, "*.wav"))
+    
+    if not files:
+        print(f"Không tìm thấy file .wav nào trong {folder_path}")
+        return
+
+    total_files = len(files)
+    print(f"🚀 Tìm thấy {total_files} file.")
+    print(f"⚡ Đang trích xuất đặc trưng (Turbo Mode - {MAX_WORKERS} Cores)...")
+
+    start_time = time.time()
+    processed_count = 0
+
+    with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        # Header chuẩn
+        writer.writerow(["Filename", "RMS", "Pitch", "Var", "ZCR", "Jitter", "Shimmer", "TEO", "Label"])
+        
+        # Chạy đa luồng
+        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(process_single_file, f): f for f in files}
             
-            if i % 100 == 0: print(f"Đã xong {i} file...")
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    writer.writerow(result)
+                
+                processed_count += 1
+                # Báo cáo tiến độ
+                if processed_count % 100 == 0:
+                    percent = (processed_count / total_files) * 100
+                    print(f"\r✅ Tiến độ: {processed_count}/{total_files} ({percent:.1f}%)", end="")
 
-    print(f"✅ Xong! File CSV mới đã có cột TEO.")
+    total_time = time.time() - start_time
+    print(f"\n\n🎉 XONG! Dữ liệu đã lưu vào {output_csv}")
+    print(f"Thời gian xử lý: {int(total_time//60)} phút {int(total_time%60)} giây.")
 
 if __name__ == "__main__":
-    extract_features_from_folder(DATASET_PATH, OUTPUT_FILE)
+    extract_features_turbo(DATASET_PATH, OUTPUT_FILE)

@@ -1,140 +1,107 @@
-# import csv
-# import json
-
-# # Cấu hình
-# INPUT_CSV = "features_dataset.csv"
-# OUTPUT_MODEL = "emotion_model.json" # File này dùng để lưu lại các thông số chuẩn
-
-# def calculate_average_features():
-#     print(f"Đang đọc dữ liệu từ {INPUT_CSV}...")
-    
-#     # Từ điển lưu trữ dữ liệu
-#     data_storage = {}
-    
-#     try:
-#         with open(INPUT_CSV, mode='r', encoding='utf-8') as f:
-#             reader = csv.DictReader(f)
-            
-#             for row in reader:
-#                 label = row['Label']
-#                 if label == "UNKNOWN": continue
-                
-#                 if label not in data_storage:
-#                     data_storage[label] = {
-#                         "RMS": [], "Pitch": [], "Var": [], "ZCR": [],
-#                         "Jitter": [], "Shimmer": [] # Thêm 2 cột mới
-#                     }
-                
-#                 # Gom dữ liệu (Chuyển từ string sang float)
-#                 data_storage[label]["RMS"].append(float(row['RMS_Energy']))
-#                 data_storage[label]["Pitch"].append(float(row['Avg_Pitch']))
-#                 data_storage[label]["Var"].append(float(row['Pitch_Variance']))
-#                 data_storage[label]["ZCR"].append(float(row['Avg_ZCR']))
-#                 data_storage[label]["Jitter"].append(float(row['Jitter']))   # Mới
-#                 data_storage[label]["Shimmer"].append(float(row['Shimmer'])) # Mới
-                
-#         # Tính trung bình (Centroids)
-#         model = {}
-        
-#         # In tiêu đề bảng
-#         print("\n" + "="*85)
-#         print(f"{'Label':<15} {'RMS':<8} {'Pitch':<8} {'Var':<8} {'ZCR':<8} {'Jitter':<8} {'Shimmer':<8}")
-#         print("-" * 85)
-        
-#         for label, feats in data_storage.items():
-#             count = len(feats["RMS"])
-#             if count == 0: continue
-            
-#             # Tính trung bình cộng
-#             avg_vals = {k: sum(v)/count for k, v in feats.items()}
-            
-#             # Lưu vào model (làm tròn số cho đẹp)
-#             model[label] = avg_vals
-            
-#             print(f"{label:<15} {int(avg_vals['RMS']):<8} {int(avg_vals['Pitch']):<8} "
-#                   f"{int(avg_vals['Var']):<8} {avg_vals['ZCR']:.3f}   "
-#                   f"{avg_vals['Jitter']:.2f}%    {avg_vals['Shimmer']:.2f}%")
-
-#         print("="*85)
-
-#         # (Tùy chọn) Lưu ra file JSON nếu sau này muốn dùng code tự động so sánh
-#         with open(OUTPUT_MODEL, 'w', encoding='utf-8') as f:
-#             json.dump(model, f, indent=4)
-#             print(f"\n✅ Đã lưu bộ thông số chuẩn vào: {OUTPUT_MODEL}")
-
-#     except FileNotFoundError:
-#         print(f"❌ Lỗi: Không tìm thấy file {INPUT_CSV}. Hãy chạy extract_features.py trước!")
-#     except KeyError as e:
-#         print(f"❌ Lỗi dữ liệu: File CSV thiếu cột {e}. Hãy chạy lại extract_features.py để cập nhật cột mới.")
-
-# if __name__ == "__main__":
-#     calculate_average_features()
-
 import csv
 import json
 
 # Cấu hình
 INPUT_CSV = "features_dataset.csv"
-OUTPUT_MODEL = "emotion_model.json" # File kết quả sẽ được lưu ở đây
+OUTPUT_MODEL = "emotion_model.json"
+
+# Map để hiển thị lại cho người dùng cuối
+EMOTION_DISPLAY_MAP = {
+    "ANG": "ANG",
+    "DIS": "DIS",
+    "FEA": "FEA",
+    "HAP": "HAP",
+    "NEU": "NEU",
+    "SAD": "SAD"
+}
 
 def calculate_average_features():
-    print(f"Đang phân tích dữ liệu từ {INPUT_CSV}...")
-    data = {}
+    print(f"Đang đọc dữ liệu từ {INPUT_CSV} và tạo model chi tiết...")
     
-    # 1. ĐỌC DỮ LIỆU TỪ CSV
+    # Dictionary lưu trữ data gom nhóm
+    # Key sẽ là dạng: "ANG_HI", "ANG_XX", "HAP_MD"...
+    data_storage = {}
+    
     try:
         with open(INPUT_CSV, mode='r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
+            
             for row in reader:
-                lbl = row['Label']
-                if lbl == "UNKNOWN": continue
+                label_full = row['Label'] # VD: "ANG (Angry)"
+                filename = row['Filename'] # VD: "1001_DFA_ANG_XX.wav"
                 
-                # Khởi tạo list nếu chưa có
-                if lbl not in data: 
-                    data[lbl] = {"RMS": [], "Pitch": [], "Var": [], "Jitter": [], "Shimmer": [], "TEO": []}
+                if label_full == "UNKNOWN": continue
                 
-                # Gom dữ liệu vào list
-                data[lbl]["RMS"].append(float(row['RMS']))
-                data[lbl]["Pitch"].append(float(row['Pitch']))
-                data[lbl]["Var"].append(float(row['Var']))
-                data[lbl]["Jitter"].append(float(row['Jitter']))
-                data[lbl]["Shimmer"].append(float(row['Shimmer']))
-                data[lbl]["TEO"].append(float(row['TEO']))
+                # 1. Tách mã cảm xúc (ANG)
+                emo_code = list(EMOTION_DISPLAY_MAP.keys())
+                current_code = "NEU"
+                for code in emo_code:
+                    if code in label_full:
+                        current_code = code
+                        break
+                
+                # 2. Tách cường độ (Intensity) từ tên file
+                # Giả định format: 1001_DFA_ANG_XX.wav -> Lấy phần thứ 4
+                try:
+                    parts = filename.replace(".wav", "").split('_')
+                    if len(parts) >= 4:
+                        intensity = parts[3] # XX, LO, MD, HI
+                    else:
+                        intensity = "XX"
+                except:
+                    intensity = "XX"
 
-        # 2. TÍNH TRUNG BÌNH & IN RA MÀN HÌNH
-        final_model = {} # Biến để lưu dữ liệu xuất file
+                # 3. Tạo Key duy nhất: VD "ANG_HI"
+                unique_key = f"{current_code}_{intensity}"
+                
+                if unique_key not in data_storage:
+                    data_storage[unique_key] = {
+                        "RMS": [], "Pitch": [], "Var": [], "ZCR": [],
+                        "Jitter": [], "Shimmer": [], "TEO": []
+                    }
+                
+                # 4. Đẩy dữ liệu vào
+                data_storage[unique_key]["RMS"].append(float(row['RMS']))
+                data_storage[unique_key]["Pitch"].append(float(row['Pitch']))
+                data_storage[unique_key]["Var"].append(float(row['Var']))
+                data_storage[unique_key]["ZCR"].append(float(row['ZCR']))
+                data_storage[unique_key]["Jitter"].append(float(row['Jitter']))
+                data_storage[unique_key]["Shimmer"].append(float(row['Shimmer']))
+                data_storage[unique_key]["TEO"].append(float(row['TEO']))
+
+        # 5. Tính trung bình và tạo Model cuối cùng
+        final_model = {}
         
-        print("\n" + "="*105)
-        print(f"{'Label':<15} {'RMS':<8} {'Pitch':<8} {'Var':<8} {'Jitter':<8} {'Shimmer':<8} {'TEO (Triệu)':<12}")
-        print("-" * 105)
+        print("\n" + "="*60)
+        print(f"{'Key Model':<15} {'Count':<8} {'RMS':<8} {'Pitch':<8}")
+        print("-" * 60)
         
-        for lbl, feats in data.items():
+        for key, feats in data_storage.items():
             count = len(feats["RMS"])
             if count == 0: continue
             
-            # Tính trung bình cộng cho từng đặc trưng
-            avg = {k: sum(v)/count for k, v in feats.items()}
+            # Tính trung bình các chỉ số
+            avg_profile = {k: sum(v)/count for k, v in feats.items()}
             
-            # Lưu vào biến tổng hợp để xuất file
-            final_model[lbl] = avg
+            # Thêm trường "DisplayLabel" để code nhận diện biết đường trả về kết quả
+            # Ví dụ: Key là "ANG_HI" nhưng hiển thị vẫn là "ANG (Giận dữ)"
+            original_code = key.split('_')[0]
+            avg_profile["DisplayLabel"] = EMOTION_DISPLAY_MAP.get(original_code, label_full)
             
-            # In ra màn hình cho dễ nhìn (TEO chia 1 triệu)
-            print(f"{lbl:<15} {int(avg['RMS']):<8} {int(avg['Pitch']):<8} {int(avg['Var']):<8} "
-                  f"{avg['Jitter']:.2f}%   {avg['Shimmer']:.2f}%   {int(avg['TEO']/1000000)}M")
+            final_model[key] = avg_profile
             
-        print("="*105)
-
-        # 3. XUẤT RA FILE JSON (QUAN TRỌNG)
+            print(f"{key:<15} {count:<8} {int(avg_profile['RMS']):<8} {int(avg_profile['Pitch']):<8}")
+            
+        # 6. Lưu ra JSON
         with open(OUTPUT_MODEL, 'w', encoding='utf-8') as f:
             json.dump(final_model, f, indent=4)
             
-        print(f"\n✅ Đã xuất file mô hình chuẩn ra: {OUTPUT_MODEL}")
-        print("Bạn hãy mở file này lên để xem chính xác con số TEO trung bình nhé!")
+        print("\n" + "="*60)
+        print(f"Đã lưu {len(final_model)} mẫu model vào '{OUTPUT_MODEL}'")
+        print("Model đã sẵn sàng cho phương pháp Pattern Matching (So khớp mẫu).")
 
-    except FileNotFoundError:
-        print(f"❌ Lỗi: Không tìm thấy file {INPUT_CSV}. Hãy chạy extract_features.py trước.")
-    except KeyError as e:
-        print(f"❌ Lỗi dữ liệu: File CSV thiếu cột {e}. Hãy chạy lại extract_features.py.")
+    except Exception as e:
+        print(f"Lỗi: {e}")
 
 if __name__ == "__main__":
     calculate_average_features()

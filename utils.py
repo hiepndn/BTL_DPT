@@ -38,16 +38,46 @@ EMOTION_PROFILES = {
 def read_wav(file_path):
     try:
         with open(file_path, 'rb') as f:
-            header = f.read(44)
-            # Chỉ check 4 byte đầu, lỏng tay hơn thư viện chuẩn
-            if header[0:4] != b'RIFF': return None, None
-            sample_rate = struct.unpack('<I', header[24:28])[0]
-            data = f.read()
-            count = len(data) // 2
-            format_str = '<' + ('h' * count)
-            samples = list(struct.unpack(format_str, data))
-        return samples, sample_rate
-    except:
+            # 1. Kiểm tra Header cơ bản (12 byte đầu)
+            header = f.read(12)
+            if header[0:4] != b'RIFF' or header[8:12] != b'WAVE':
+                return None, None
+
+            # 2. Đi tìm chunk 'fmt ' để lấy sample_rate
+            # và chunk 'data' để lấy âm thanh
+            sample_rate = 0
+            samples = []
+            
+            while True:
+                # Đọc tên chunk (4 byte) và kích thước chunk (4 byte)
+                chunk_id = f.read(4)
+                if len(chunk_id) < 4: break # Hết file
+                
+                # struct.unpack('<I', ...) để đọc số nguyên 4 byte (Little Endian)
+                chunk_size = struct.unpack('<I', f.read(4))[0]
+                
+                if chunk_id == b'fmt ':
+                    # Đọc thông tin format
+                    fmt_data = f.read(chunk_size)
+                    sample_rate = struct.unpack('<I', fmt_data[4:8])[0]
+                    # Nếu file không phải PCM (mã 1) thì code này chưa xử lý được, nhưng bài tập chắc chỉ dùng PCM thôi
+                    
+                elif chunk_id == b'data':
+                    # ĐÂY RỒI! Dữ liệu âm thanh nằm ở đây
+                    raw_data = f.read(chunk_size) # Chỉ đọc đúng chunk_size byte
+                    count = len(raw_data) // 2
+                    format_str = '<' + ('h' * count)
+                    samples = list(struct.unpack(format_str, raw_data))
+                    
+                    # Đọc xong data là đủ, thoát luôn, không đọc phần rác phía sau nữa
+                    break 
+                else:
+                    # Nếu gặp chunk lạ (Metadata, LIST, INFO...), bỏ qua nó
+                    f.seek(chunk_size, 1) # Nhảy qua chunk_size byte
+                    
+            return samples, sample_rate
+    except Exception as e:
+        print("Lỗi đọc file:", e)
         return None, None
 
 def get_frames(samples, sample_rate, frame_duration=0.02):

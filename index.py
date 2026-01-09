@@ -2,20 +2,17 @@ import streamlit as st
 import os
 import shutil
 
-# Import các hàm xử lý
 from utils import read_wav, analyze_emotion_advanced
 from media_utils import convert_to_wav
 
-# ==============================
-# CẤU HÌNH TRANG
-# ==============================
+
 st.set_page_config(
     page_title="DSP Emotion Recognition",
     page_icon="🎧",
     layout="centered"
 )
 
-# CSS làm đẹp
+
 st.markdown("""
     <style>
     .stMetric { background-color: #0e1117; border: 1px solid #303030; padding: 10px; border-radius: 5px; }
@@ -27,9 +24,7 @@ st.title("🎧 BTL Đa Phương Tiện - Nhận diện Cảm xúc")
 st.caption("Hỗ trợ: WAV, MP3, MP4, M4A. Hệ thống sử dụng Pattern Matching đa tầng.")
 st.markdown("---")
 
-# ==============================
-# UPLOAD FILE
-# ==============================
+
 uploaded_file = st.file_uploader(
     "📂 Chọn file âm thanh/video",
     type=["wav", "mp3", "mp4", "m4a"]
@@ -39,12 +34,12 @@ if uploaded_file:
     file_name = uploaded_file.name
     ext = os.path.splitext(file_name)[1].lower()
 
-    # 1. Lưu file tạm
+    
     temp_input_path = f"temp_input{ext}"
     with open(temp_input_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    # 2. Xử lý chuyển đổi sang WAV
+    
     wav_path = "temp_final.wav"
     
     with st.spinner("🔄 Đang chuẩn hóa định dạng âm thanh..."):
@@ -56,11 +51,10 @@ if uploaded_file:
                 st.error("❌ Lỗi: Không thể chuyển đổi file này.")
                 st.stop()
     
-    # Xóa file gốc cho nhẹ
+    
     if os.path.exists(temp_input_path):
         os.remove(temp_input_path)
 
-    # 3. Đọc để vẽ biểu đồ (Chỉ dùng để vẽ, không dùng để phân tích nữa)
     samples, sr = read_wav(wav_path)
 
     if samples is None:
@@ -69,33 +63,29 @@ if uploaded_file:
 
     st.success(f"✅ Đã tải: {file_name}")
 
-    # 4. Vẽ biểu đồ sóng
     st.subheader("📊 Biểu đồ Sóng âm")
-    # Downsample để vẽ cho nhanh (lấy 1 mẫu mỗi 500 mẫu)
+    
     step = max(1, len(samples) // 1000) 
     st.line_chart(samples[::step], use_container_width=True)
 
     st.markdown("---")
 
-    # ==============================
-    # 5. PHÂN TÍCH CẢM XÚC
-    # ==============================
     if st.button("🔍 PHÂN TÍCH CẢM XÚC (DSP)", type="primary"):
         
         with st.spinner("Đang tính toán RMS, Pitch, TEO và so khớp mẫu..."):
-            # --- SỬA Ở ĐÂY: TRUYỀN ĐƯỜNG DẪN FILE THAY VÌ SAMPLES ---
+            
             emotion, stats = analyze_emotion_advanced(wav_path)
 
         st.subheader("🎯 Kết quả Nhận diện")
 
-        # Xử lý hiển thị
+  
         if "Silence" in emotion or "Error" in emotion:
             st.warning(f"⚠️ {emotion}")
         else:
-            # Map màu sắc (Cập nhật theo tên tiếng Việt trong utils.py)
+            
             color_map = {
                 "ANG (Giận dữ)": ("#FF4B4B", "😡"),
-                "ANG (Giận dữ tột độ)": ("#D50000", "🤬"), # Đỏ đậm
+                "ANG (Giận dữ tột độ)": ("#D50000", "🤬"), 
                 "ANG (Giận dữ kìm nén)": ("#B71C1C", "😤"),
                 
                 "HAP (Hạnh phúc)": ("#FFC107", "😂"),
@@ -118,7 +108,6 @@ if uploaded_file:
                 "NEU (Bình thường)": ("#4CAF50", "😐")
             }
             
-            # Lấy màu và icon, mặc định là màu đen nếu không tìm thấy
             color, icon = color_map.get(emotion, ("#607D8B", "🤔"))
 
             st.markdown(
@@ -130,7 +119,6 @@ if uploaded_file:
                 unsafe_allow_html=True
             )
 
-            # Hiển thị thông số chi tiết
             st.markdown("### 📈 Chi tiết Đặc trưng Âm thanh")
             
             c1, c2, c3 = st.columns(3)
@@ -143,9 +131,5 @@ if uploaded_file:
             c5.metric("Jitter (%)", f"{stats.get('Jitter', 0):.2f}")
             c6.metric("Shimmer (%)", f"{stats.get('Shimmer', 0):.2f}")
 
-            # Thêm debug nhỏ ở dưới để thầy cô thấy mình có tính toán thật
             with st.expander("Xem dữ liệu thô (JSON)"):
                 st.json(stats)
-
-    # Không xóa file wav vội để người dùng có thể bấm phân tích lại nếu muốn
-    # (Streamlit sẽ tự clean khi reload session)

@@ -3,9 +3,6 @@ import math
 import json
 import os
 
-# ==========================================
-# PHẦN 1: DỮ LIỆU MẪU (24 LOẠI CẢM XÚC)
-# ==========================================
 EMOTION_PROFILES = {
     "FEA_XX": { "RMS": 772, "Pitch": 188, "Var": 324, "ZCR": 0.0812, "Jitter": 30.98, "Shimmer": 28.39, "TEO": 497768, "DisplayLabel": "FEA (Sợ hãi)" },
     "ANG_HI": { "RMS": 3844, "Pitch": 229, "Var": 331, "ZCR": 0.1182, "Jitter": 24.86, "Shimmer": 31.72, "TEO": 15102455, "DisplayLabel": "ANG (Giận dữ tột độ)" },
@@ -31,49 +28,41 @@ EMOTION_PROFILES = {
     "SAD_X":  { "RMS": 241, "Pitch": 166, "Var": 340, "ZCR": 0.0530, "Jitter": 46.92, "Shimmer": 27.47, "TEO": 4858, "DisplayLabel": "SAD (Buồn)" }
 }
 
-# ==========================================
-# PHẦN 2: CÁC HÀM XỬ LÝ TÍN HIỆU (CODE CŨ CỦA BẠN - GIỮ NGUYÊN 100%)
-# ==========================================
 
 def read_wav(file_path):
     try:
         with open(file_path, 'rb') as f:
-            # 1. Kiểm tra Header cơ bản (12 byte đầu)
+           
             header = f.read(12)
             if header[0:4] != b'RIFF' or header[8:12] != b'WAVE':
                 return None, None
 
-            # 2. Đi tìm chunk 'fmt ' để lấy sample_rate
-            # và chunk 'data' để lấy âm thanh
             sample_rate = 0
             samples = []
             
             while True:
-                # Đọc tên chunk (4 byte) và kích thước chunk (4 byte)
-                chunk_id = f.read(4)
-                if len(chunk_id) < 4: break # Hết file
                 
-                # struct.unpack('<I', ...) để đọc số nguyên 4 byte (Little Endian)
+                chunk_id = f.read(4)
+                if len(chunk_id) < 4: break 
+                
                 chunk_size = struct.unpack('<I', f.read(4))[0]
                 
                 if chunk_id == b'fmt ':
-                    # Đọc thông tin format
+                    
                     fmt_data = f.read(chunk_size)
                     sample_rate = struct.unpack('<I', fmt_data[4:8])[0]
-                    # Nếu file không phải PCM (mã 1) thì code này chưa xử lý được, nhưng bài tập chắc chỉ dùng PCM thôi
                     
                 elif chunk_id == b'data':
-                    # ĐÂY RỒI! Dữ liệu âm thanh nằm ở đây
-                    raw_data = f.read(chunk_size) # Chỉ đọc đúng chunk_size byte
+                    
+                    raw_data = f.read(chunk_size) 
                     count = len(raw_data) // 2
                     format_str = '<' + ('h' * count)
                     samples = list(struct.unpack(format_str, raw_data))
                     
-                    # Đọc xong data là đủ, thoát luôn, không đọc phần rác phía sau nữa
                     break 
                 else:
-                    # Nếu gặp chunk lạ (Metadata, LIST, INFO...), bỏ qua nó
-                    f.seek(chunk_size, 1) # Nhảy qua chunk_size byte
+                   
+                    f.seek(chunk_size, 1) 
                     
             return samples, sample_rate
     except Exception as e:
@@ -85,7 +74,7 @@ def get_frames(samples, sample_rate, frame_duration=0.02):
     return [samples[i:i+frame_size] for i in range(0, len(samples), frame_size)]
 
 def calculate_energy(frame):
-    # Trả về 1 số float (năng lượng của frame đó)
+   
     return sum(s*s for s in frame) / len(frame)
 
 def calculate_rms(frame):
@@ -145,25 +134,18 @@ def calculate_shimmer(rms_list):
     if avg_rms == 0: return 0
     return (sum(diffs) / len(diffs)) / avg_rms * 100
 
-# ==========================================
-# PHẦN 3: THUẬT TOÁN NHẬN DIỆN MỚI (PHẦN NÀY LÀ MỚI)
-# ==========================================
 
 def calculate_weighted_distance(input_feats, profile_feats):
     score = 0
     
-    # Cập nhật trọng số dựa trên dữ liệu mới:
-    # - RMS và TEO vẫn là quan trọng nhất.
-    # - Pitch và Jitter giờ đây phân loại tốt hơn (SAD Jitter cao, ANG Jitter thấp).
-    # - Var (Biến thiên) gần như giống nhau ở mọi cảm xúc (toàn 310-330), nên giảm trọng số cực thấp.
     weights = {
-        "RMS": 3.0,     # Quan trọng nhất
-        "TEO": 2.5,     # Quan trọng nhì
+        "RMS": 3.0,    
+        "TEO": 2.5,
         "Pitch": 1.5,   
-        "Jitter": 1.0,  # Dữ liệu mới cho thấy Jitter phân loại khá tốt
+        "Jitter": 1.0,  
         "ZCR": 1.0,
         "Shimmer": 0.5,
-        "Var": 0.1      # Var bị nhiễu, không phân biệt được nhiều -> Giảm trọng số
+        "Var": 0.1      
     }
     
     for key, weight in weights.items():
@@ -172,14 +154,13 @@ def calculate_weighted_distance(input_feats, profile_feats):
         
         if val_profile == 0: continue
         
-        # % Sai lệch: |Input - Mẫu| / Mẫu
         diff_percent = abs(val_input - val_profile) / val_profile
         score += diff_percent * weight
         
     return score
 
 def analyze_emotion_advanced(file_path):
-    # 1. Đọc file
+    
     samples, sr = read_wav(file_path)
     if not samples: return "Error", {}
     
@@ -189,16 +170,15 @@ def analyze_emotion_advanced(file_path):
     zcrs = []
     teo_list = []
     
-    # Vòng lặp tính toán (đã fix lỗi gọi hàm)
     for frame in frames:
-        e = calculate_energy(frame) # Hàm nhận 1 frame -> Trả về float -> OK
+        e = calculate_energy(frame) 
         rms = calculate_rms(frame)
         teo = calculate_teo(frame)
         
         rms_list.append(rms)
         teo_list.append(teo)
         
-        # Ngưỡng năng lượng 800
+        
         if e > 800: 
             p, _ = get_pitch_details(frame, sr)
             if p > 50: pitches.append(p)
@@ -206,7 +186,7 @@ def analyze_emotion_advanced(file_path):
 
     if not rms_list: return "Silence", {}
 
-    # Tổng hợp Input
+   
     avg_rms = sum(rms_list) / len(rms_list)
     avg_teo = sum(teo_list) / len(teo_list)
     avg_pitch = sum(pitches) / len(pitches) if pitches else 0
@@ -224,7 +204,7 @@ def analyze_emotion_advanced(file_path):
     print(f"File: {os.path.basename(file_path)}")
     print(f" -> Input: RMS={int(avg_rms)}, Pitch={int(avg_pitch)}, Jitter={jitter:.2f}")
 
-    # 2. So khớp mẫu
+    
     best_label = "UNKNOWN"
     min_score = float('inf')
     best_profile_key = ""

@@ -15,9 +15,7 @@
     - pip install moviepy   
     - pip install streamlit
 
-===========================================================================================================================
-GEMINI giải thích
-===========================================================================================================================
+- link data kangle(Creama): https://www.kaggle.com/datasets/dmitrybabko/speech-emotion-recognition-en/data
 
 1. RMS (Root Mean Square) - Năng lượng/Độ to
     - Nó đo cái gì? Độ to, âm lượng trung bình của giọng nói.
@@ -25,7 +23,7 @@ GEMINI giải thích
     - Tại sao chọn? Đây là cách dễ nhất để phân biệt nhóm "Năng lượng cao" (Vui, Giận) và "Năng lượng thấp" (Buồn, Bình thường).
     - Ví dụ: Giận dữ (RMS ~1800) > Buồn (RMS ~300).
 
-2. Pitch (F0) - Cao độ
+2. pitch
     - Nó đo cái gì? Độ trầm hay bổng của giọng nói (Tần số rung của dây thanh quản).
     - Cơ sở vật lý: Khi căng thẳng hoặc phấn khích, cơ dây thanh quản co rút lại -> Dây thanh rung nhanh hơn -> Giọng cao hơn. Khi buồn, cơ thả lỏng -> Giọng trầm xuống.
     - Tại sao chọn? Để phân biệt Nam/Nữ và phân biệt Vui/Sợ (giọng cao) với Buồn/Bình thường (giọng trầm).

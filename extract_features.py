@@ -10,12 +10,12 @@ from utils import (
     calculate_shimmer, calculate_teo
 )
 
-# --- CẤU HÌNH ---
-DATASET_PATH = "./data_tets/Crema" # Sửa lại đường dẫn của bạn nếu cần
+
+DATASET_PATH = "./data_tets/Crema" 
 OUTPUT_FILE = "features_dataset.csv"
 MAX_WORKERS = os.cpu_count() 
 
-# Ngưỡng năng lượng để lọc khoảng lặng (Phải để thấp thôi, khoảng 800 là đẹp)
+
 ENERGY_THRESHOLD = 800 
 
 EMOTION_MAP = {
@@ -27,23 +27,22 @@ def process_single_file(file_path):
     try:
         filename = os.path.basename(file_path)
         
-        # 1. Đọc tín hiệu
+        
         samples, sr = read_wav(file_path)
         if not samples: return None
         
         frames = get_frames(samples, sr)
         if not frames: return None
 
-        # Danh sách chứa kết quả từng frame
+       
         rms_list = []
         pitches = []
         lags = []
         zcrs = []
         teo_list = []
 
-        # 2. VÒNG LẶP XỬ LÝ TỪNG FRAME (Khớp với utils.py mới)
         for frame in frames:
-            # Tính các chỉ số cơ bản
+            
             e = calculate_energy(frame)
             rms = calculate_rms(frame)
             teo = calculate_teo(frame)
@@ -51,34 +50,32 @@ def process_single_file(file_path):
             rms_list.append(rms)
             teo_list.append(teo)
             
-            # Chỉ tính Pitch và ZCR nếu có tiếng nói (Năng lượng > 800)
+           
             if e > ENERGY_THRESHOLD:
                 p, lag = get_pitch_details(frame, sr)
-                if p > 50: # Lọc nhiễu tần số thấp
+                if p > 50: 
                     pitches.append(p)
                     lags.append(lag)
                 zcrs.append(calculate_zcr(frame))
 
         if not rms_list: return None
 
-        # 3. TỔNG HỢP (Tính trung bình cộng)
         avg_rms = sum(rms_list) / len(rms_list)
         avg_teo = sum(teo_list) / len(teo_list)
         
         avg_zcr = sum(zcrs) / len(zcrs) if zcrs else 0
         avg_pitch = sum(pitches) / len(pitches) if pitches else 0
         
-        # Độ biến thiên Pitch (Var)
+        
         pitch_var = 0
         if len(pitches) > 1:
             pitch_var = max(pitches) - min(pitches)
             
-        # Jitter & Shimmer
+        
         jitter = calculate_jitter(pitches if pitches else [0])
         shimmer = calculate_shimmer(rms_list)
 
-        # 4. GẮN NHÃN TỰ ĐỘNG
-        # Tên file mẫu: 1001_DFA_ANG_XX.wav
+        
         label = "UNKNOWN"
         try:
             name_clean = os.path.splitext(filename)[0] 
@@ -89,7 +86,7 @@ def process_single_file(file_path):
         except:
             label = "UNKNOWN"
 
-        # Trả về dòng dữ liệu để ghi CSV
+        
         return [
             filename, 
             int(avg_rms), int(avg_pitch), int(pitch_var), round(avg_zcr, 4), 
@@ -98,12 +95,11 @@ def process_single_file(file_path):
         ]
         
     except Exception as e:
-        # Nếu lỗi file nào thì in ra để biết
-        # print(f"Lỗi file {file_path}: {e}")
+        
         return None
 
 def extract_features_turbo(folder_path, output_csv):
-    # Tìm tất cả file .wav
+    
     files = glob.glob(os.path.join(folder_path, "*.wav"))
     
     if not files:
@@ -119,10 +115,10 @@ def extract_features_turbo(folder_path, output_csv):
 
     with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        # Header chuẩn
+        
         writer.writerow(["Filename", "RMS", "Pitch", "Var", "ZCR", "Jitter", "Shimmer", "TEO", "Label"])
         
-        # Chạy đa luồng
+       
         with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {executor.submit(process_single_file, f): f for f in files}
             
@@ -132,7 +128,7 @@ def extract_features_turbo(folder_path, output_csv):
                     writer.writerow(result)
                 
                 processed_count += 1
-                # Báo cáo tiến độ
+                
                 if processed_count % 100 == 0:
                     percent = (processed_count / total_files) * 100
                     print(f"\r✅ Tiến độ: {processed_count}/{total_files} ({percent:.1f}%)", end="")

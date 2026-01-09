@@ -1,11 +1,10 @@
 import csv
 import json
 
-# Cấu hình
+
 INPUT_CSV = "features_dataset.csv"
 OUTPUT_MODEL = "emotion_model.json"
 
-# Map để hiển thị lại cho người dùng cuối
 EMOTION_DISPLAY_MAP = {
     "ANG": "ANG",
     "DIS": "DIS",
@@ -18,8 +17,6 @@ EMOTION_DISPLAY_MAP = {
 def calculate_average_features():
     print(f"Đang đọc dữ liệu từ {INPUT_CSV} và tạo model chi tiết...")
     
-    # Dictionary lưu trữ data gom nhóm
-    # Key sẽ là dạng: "ANG_HI", "ANG_XX", "HAP_MD"...
     data_storage = {}
     
     try:
@@ -27,12 +24,12 @@ def calculate_average_features():
             reader = csv.DictReader(f)
             
             for row in reader:
-                label_full = row['Label'] # VD: "ANG (Angry)"
-                filename = row['Filename'] # VD: "1001_DFA_ANG_XX.wav"
+                label_full = row['Label'] 
+                filename = row['Filename'] 
                 
                 if label_full == "UNKNOWN": continue
                 
-                # 1. Tách mã cảm xúc (ANG)
+                
                 emo_code = list(EMOTION_DISPLAY_MAP.keys())
                 current_code = "NEU"
                 for code in emo_code:
@@ -40,18 +37,16 @@ def calculate_average_features():
                         current_code = code
                         break
                 
-                # 2. Tách cường độ (Intensity) từ tên file
-                # Giả định format: 1001_DFA_ANG_XX.wav -> Lấy phần thứ 4
                 try:
                     parts = filename.replace(".wav", "").split('_')
                     if len(parts) >= 4:
-                        intensity = parts[3] # XX, LO, MD, HI
+                        intensity = parts[3] 
                     else:
                         intensity = "XX"
                 except:
                     intensity = "XX"
 
-                # 3. Tạo Key duy nhất: VD "ANG_HI"
+                
                 unique_key = f"{current_code}_{intensity}"
                 
                 if unique_key not in data_storage:
@@ -60,7 +55,7 @@ def calculate_average_features():
                         "Jitter": [], "Shimmer": [], "TEO": []
                     }
                 
-                # 4. Đẩy dữ liệu vào
+                
                 data_storage[unique_key]["RMS"].append(float(row['RMS']))
                 data_storage[unique_key]["Pitch"].append(float(row['Pitch']))
                 data_storage[unique_key]["Var"].append(float(row['Var']))
@@ -69,7 +64,7 @@ def calculate_average_features():
                 data_storage[unique_key]["Shimmer"].append(float(row['Shimmer']))
                 data_storage[unique_key]["TEO"].append(float(row['TEO']))
 
-        # 5. Tính trung bình và tạo Model cuối cùng
+        
         final_model = {}
         
         print("\n" + "="*60)
@@ -80,11 +75,10 @@ def calculate_average_features():
             count = len(feats["RMS"])
             if count == 0: continue
             
-            # Tính trung bình các chỉ số
+           
             avg_profile = {k: sum(v)/count for k, v in feats.items()}
             
-            # Thêm trường "DisplayLabel" để code nhận diện biết đường trả về kết quả
-            # Ví dụ: Key là "ANG_HI" nhưng hiển thị vẫn là "ANG (Giận dữ)"
+            
             original_code = key.split('_')[0]
             avg_profile["DisplayLabel"] = EMOTION_DISPLAY_MAP.get(original_code, label_full)
             
@@ -92,7 +86,7 @@ def calculate_average_features():
             
             print(f"{key:<15} {count:<8} {int(avg_profile['RMS']):<8} {int(avg_profile['Pitch']):<8}")
             
-        # 6. Lưu ra JSON
+        
         with open(OUTPUT_MODEL, 'w', encoding='utf-8') as f:
             json.dump(final_model, f, indent=4)
             
